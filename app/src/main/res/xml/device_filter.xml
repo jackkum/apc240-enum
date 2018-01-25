@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Serial converters -->
+    <!-- 0x0403 / 0x6001: FTDI FT232R UART -->
+    <!-- 1a86:7523 -->
+    <usb-device vendor-id="6790" product-id="29987" />
+    <!-- … more devices … -->
+</resources>
