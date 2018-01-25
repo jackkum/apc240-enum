@@ -1,5 +1,6 @@
 package com.jackkum.rfsniffer;
 
+import android.Manifest;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -10,8 +11,10 @@ import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
+import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.WindowManager;
@@ -21,6 +24,10 @@ import com.hoho.android.usbserial.driver.UsbSerialDriver;
 import com.hoho.android.usbserial.driver.UsbSerialPort;
 import com.hoho.android.usbserial.driver.UsbSerialProber;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
@@ -90,6 +97,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         log.setText(tmp);
+        appendLog(message);
     }
 
     @Override
@@ -97,6 +105,13 @@ public class MainActivity extends AppCompatActivity {
         super.onStart();
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        String permissions[] = new String[]{
+                Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                Manifest.permission.READ_EXTERNAL_STORAGE
+        };
+
+        ActivityCompat.requestPermissions(MainActivity.this, permissions, 0);
     }
 
     @Override
@@ -256,5 +271,30 @@ public class MainActivity extends AppCompatActivity {
             hexChars[j * 2 + 1] = hexArray[v & 0x0F];
         }
         return new String(hexChars);
+    }
+
+    public void appendLog(String text)
+    {
+        Calendar now = Calendar.getInstance();
+        File logFile = new File(Environment.getExternalStorageDirectory(), "rf.log");
+        if (!logFile.exists()) {
+            try
+            {
+                logFile.createNewFile();
+            } catch (IOException e) {
+                Log.d("DOMOFON", e.toString());
+                e.printStackTrace();
+            }
+        }
+
+        try {
+            BufferedWriter buf = new BufferedWriter(new FileWriter(logFile, true));
+            buf.append(String.format("%02d.%02d %02d:%02d:%02d %s", now.get(Calendar.DAY_OF_MONTH), now.get(Calendar.MONTH)+1, now.get(Calendar.HOUR_OF_DAY), now.get(Calendar.MINUTE), now.get(Calendar.SECOND), text));
+            buf.newLine();
+            buf.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+            Log.d("DOMOFON", e.toString());
+        }
     }
 }
