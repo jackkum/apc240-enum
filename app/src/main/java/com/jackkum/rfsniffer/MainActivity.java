@@ -37,6 +37,10 @@ public class MainActivity extends AppCompatActivity {
     private int position = 0;
     private long lastSendTime = System.currentTimeMillis();
 
+    private final int MSG_READ = 0,
+                      MSG_WRITE = 2,
+                      MSG_ERROR = 1;
+
     UsbManager mUsbManager;
     UsbSerialDriver mDriver;
     PendingIntent mPermissionIntent;
@@ -181,12 +185,9 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void handleMessage(Message msg) {
             switch (msg.what){
-                case 0:
-                    addLog("Read: " + bytesToHex((byte [])msg.obj));
-                    break;
-                case 1:
-                    addLog("Error: " + msg.obj);
-                    break;
+                case MSG_READ:  addLog("Read: "  + bytesToHex((byte [])msg.obj)); break;
+                case MSG_WRITE: addLog("Write: " + bytesToHex((byte [])msg.obj)); break;
+                case MSG_ERROR: addLog("Error: " + msg.obj); break;
             }
         }
     };
@@ -214,7 +215,10 @@ public class MainActivity extends AppCompatActivity {
                             }
 
                             lastSendTime = System.currentTimeMillis();
-                            mUsbSerialPort.write(RfModlue.settingsArray(v), 18);
+
+                            byte[] write = RfModlue.settingsArray(v);
+                            handler.obtainMessage(MSG_WRITE, write).sendToTarget();
+                            mUsbSerialPort.write(write, write.length);
                         }
 
                         mUsbSerialPort.setParameters(9600, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE);
@@ -223,11 +227,11 @@ public class MainActivity extends AppCompatActivity {
                         int numBytesRead = mUsbSerialPort.read(buffer, 1000);
                         Log.d(TAG, "Read " + numBytesRead + " bytes.");
 
-                        handler.obtainMessage(0, buffer).sendToTarget();
+                        handler.obtainMessage(MSG_READ, buffer).sendToTarget();
                     }
                 } catch(Exception e){
                     e.printStackTrace();
-                    handler.obtainMessage(1, e.toString()).sendToTarget();
+                    handler.obtainMessage(MSG_ERROR, e.toString()).sendToTarget();
                 }
 
                 if( ! active){
