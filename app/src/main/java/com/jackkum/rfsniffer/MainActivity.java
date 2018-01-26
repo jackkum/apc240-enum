@@ -9,11 +9,15 @@ import android.content.IntentFilter;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbManager;
+import android.media.Ringtone;
+import android.media.RingtoneManager;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
+import android.os.Vibrator;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
@@ -28,9 +32,11 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Calendar;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Iterator;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -43,10 +49,12 @@ public class MainActivity extends AppCompatActivity {
     private ReadData rd;
     private int position = 0;
     private long lastSendTime = System.currentTimeMillis();
+    private boolean opened = false;
 
     private final int MSG_READ = 0,
                       MSG_WRITE = 2,
-                      MSG_ERROR = 1;
+                      MSG_ERROR = 1,
+                      MSG_TEXT = 4;
 
     UsbManager mUsbManager;
     UsbSerialDriver mDriver;
@@ -68,7 +76,7 @@ public class MainActivity extends AppCompatActivity {
         RfModlue.Parity parities[] = {RfModlue.Parity.NONE, RfModlue.Parity.EVEN, RfModlue.Parity.ODD};
         RfModlue.Tw     tws[]      = {RfModlue.Tw._0_1, RfModlue.Tw._0_2, RfModlue.Tw._0_4, RfModlue.Tw._0_05, RfModlue.Tw._0_6, RfModlue.Tw._1, RfModlue.Tw._1_5, RfModlue.Tw._2, RfModlue.Tw._2_5, RfModlue.Tw._3, RfModlue.Tw._3, RfModlue.Tw._4, RfModlue.Tw._5};
 
-        for(long i = 433000L; i < 437000L; i += 200) {
+        for(long i = 433920L; i <= 433920L; i += 10) {
             for(RfModlue.DRfsk drfsk: drfsks){
                 for(RfModlue.Pout pout: pouts){
                     for(RfModlue.DRin drin : drins){
@@ -135,12 +143,25 @@ public class MainActivity extends AppCompatActivity {
         unregisterReceiver(mUsbReceiver);
 
         try {
+            opened = false;
             rd.stop();
             mConnection.close();
         } catch(Exception e){}
     }
 
     private void updateDeviceList() {
+
+        HashMap<String, UsbDevice> deviceList = mUsbManager.getDeviceList();
+        Iterator<UsbDevice> deviceIterator = deviceList.values().iterator();
+        addLog("Devices: " + deviceList.size());
+        while(deviceIterator.hasNext()){
+            UsbDevice device = deviceIterator.next();
+            addLog(device.getDeviceName()+" vendorid: "+device.getVendorId()+"  productid"+device.getProductId());
+
+            mUsbManager.requestPermission(device, mPermissionIntent);
+        }
+
+        /*
         List<UsbSerialDriver> availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(mUsbManager);
         if (availableDrivers.isEmpty()) {
             addLog("Devices not found");
@@ -170,6 +191,7 @@ public class MainActivity extends AppCompatActivity {
             e.printStackTrace();
             addLog("Error: " + e.toString());
         }
+        */
     }
 
 
@@ -182,27 +204,78 @@ public class MainActivity extends AppCompatActivity {
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
             if (ACTION_USB_PERMISSION.equals(action)) {
-                UsbDevice device = (UsbDevice) intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                try {
+                    UsbDevice device = (UsbDevice) intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
 
-                if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false) && device != null) {
-                    //Query the device's descriptor
-                    //getDeviceStatus(device);
-                    addLog("Permission allowed for: " + device.getDeviceName());
-                } else {
-                    Log.d(TAG, "permission denied for device " + device);
+                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false) && device != null) {
+                        //Query the device's descriptor
+                        //getDeviceStatus(device);
+                        addLog("Permission allowed for: " + device.getDeviceName());
+
+                        // Find the first available driver.
+                        mDriver = UsbSerialProber.getDefaultProber().probeDevice(device);
+
+                        if(mDriver == null){
+                            throw new Exception("Driver not found");
+                        }
+
+                        mConnection = mUsbManager.openDevice(mDriver.getDevice());
+                        if (mConnection == null) {
+                            throw new Exception("Can't open device");
+                        }
+
+                        addLog("Get port");
+                        mUsbSerialPort = mDriver.getPorts().get(0);
+
+                        if(mUsbSerialPort == null){
+                            throw new Exception("Serial port not found");
+                        }
+
+                        addLog("Open connection...");
+                        mUsbSerialPort.open(mConnection);
+
+                        //mUsbSerialPort.setParameters(9600, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE);
+
+                        opened = true;
+                        addLog("Success opened");
+                    } else {
+                        addLog("permission denied for device " + device);
+                    }
+                } catch(Exception e){
+                    e.printStackTrace();
+                    addLog("Error: " + e.toString());
+                    appendError(e);
                 }
             }
         }
     };
+
+    protected void playNotify()
+    {
+        try {
+            Uri notification = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            Ringtone r = RingtoneManager.getRingtone(getApplicationContext(), notification);
+            r.play();
+
+            Vibrator v = (Vibrator)getSystemService(Context.VIBRATOR_SERVICE);
+            v.vibrate(1000);
+        } catch(Exception e){
+            e.printStackTrace();
+        }
+    }
 
     final Handler handler = new Handler(){
 
         @Override
         public void handleMessage(Message msg) {
             switch (msg.what){
-                case MSG_READ:  addLog("Read: "  + bytesToHex((byte [])msg.obj)); break;
+                case MSG_READ:
+                    addLog("Read: "  + bytesToHex((byte [])msg.obj));
+                    playNotify();
+                    break;
                 case MSG_WRITE: addLog("Write: " + bytesToHex((byte [])msg.obj)); break;
                 case MSG_ERROR: addLog("Error: " + msg.obj); break;
+                case MSG_TEXT:  addLog((String)msg.obj); break;
             }
         }
     };
@@ -221,7 +294,7 @@ public class MainActivity extends AppCompatActivity {
             while(active){
 
                 try {
-                    if(mUsbSerialPort != null){
+                    if(opened){
 
                         if((System.currentTimeMillis() - lastSendTime) > 5000){
                             Variant v = variants.get(position++);
@@ -232,20 +305,32 @@ public class MainActivity extends AppCompatActivity {
                             lastSendTime = System.currentTimeMillis();
 
                             byte[] write = RfModlue.settingsArray(v);
+                            handler.obtainMessage(MSG_TEXT,
+                                    "Set: " +
+                                        "frequency: " + (v.frequency/1000) + ", " +
+                                        "DRfsk: " + v.mDRfsk + ", " +
+                                        "Pout: " + v.mPout + ", " +
+                                        "DRin: " + v.mDRin + ", " +
+                                        "Parity: " + v.mParity + ", " +
+                                        "Tw: " + v.mTw
+                            ).sendToTarget();
                             handler.obtainMessage(MSG_WRITE, write).sendToTarget();
+
                             mUsbSerialPort.write(write, write.length);
                         }
 
-                        mUsbSerialPort.setParameters(9600, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE);
+                        byte tmp[] = new byte[1000];
+                        int readed = mUsbSerialPort.read(tmp, 1000);
 
-                        byte buffer[] = new byte[16];
-                        int numBytesRead = mUsbSerialPort.read(buffer, 1000);
-                        Log.d(TAG, "Read " + numBytesRead + " bytes.");
-
-                        handler.obtainMessage(MSG_READ, buffer).sendToTarget();
+                        if(readed > 0){
+                            byte[] buffer = new byte[readed];
+                            System.arraycopy(tmp, 0, buffer, 0, readed);
+                            handler.obtainMessage(MSG_READ, buffer).sendToTarget();
+                        }
                     }
                 } catch(Exception e){
                     e.printStackTrace();
+                    appendError(e);
                     handler.obtainMessage(MSG_ERROR, e.toString()).sendToTarget();
                 }
 
@@ -295,6 +380,17 @@ public class MainActivity extends AppCompatActivity {
         } catch (IOException e) {
             e.printStackTrace();
             Log.d("DOMOFON", e.toString());
+        }
+    }
+
+    public void appendError(Exception e)
+    {
+        File logFile = new File(Environment.getExternalStorageDirectory(), "rf.log");
+        try {
+            e.printStackTrace(new PrintStream(logFile));
+        } catch(Exception er){
+            er.printStackTrace();
+            addLog("Error witing error");
         }
     }
 }

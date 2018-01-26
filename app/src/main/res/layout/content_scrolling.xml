@@ -10,13 +10,15 @@
     android:paddingTop="@dimen/activity_vertical_margin"
     tools:context="com.jackkum.rfsniffer.MainActivity">
 
-    <TextView
-        android:id="@+id/logMeesages"
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text=""
-        android:focusable="true"
-        android:scrollHorizontally="false"
-        android:scrollbars="vertical"
-        android:selectAllOnFocus="false" />
+        android:layout_height="match_parent">
+        <TextView
+            android:id="@+id/logMeesages"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:focusable="true"
+            android:scrollbars="vertical" />
+    </ScrollView>
 </RelativeLayout>
